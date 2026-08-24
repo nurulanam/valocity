@@ -208,12 +208,23 @@ function getUploadBuffer(): Uint8Array<ArrayBuffer> {
   return upBuf;
 }
 
+// Parse the Server-Timing header value to extract a duration in ms.
+// Cloudflare's /__up response includes:
+//   server-timing: cfRequestDuration;dur=123.456
+// which is the server-measured time to receive the full upload body,
+// excluding the response round-trip — the most accurate upload timing possible.
+function parseServerTimingMs(header: string | null): number | null {
+  if (!header) return null;
+  const m = header.match(/cfRequestDuration;dur=([\d.]+)/i);
+  if (!m) return null;
+  const ms = parseFloat(m[1]);
+  return isFinite(ms) && ms > 0 ? ms : null;
+}
+
 export async function measureUpload(
   signal: AbortSignal,
   onSample: (mbps: number, bytes: number, elapsed: number) => void,
   durationMs = 9000,
-  // 2 streams: enough to keep the pipe full without synchronized bursts
-  // that make the sample-window crediting spike.
   streams = 2,
 ): Promise<SpeedResult> {
   const buf = getUploadBuffer();
@@ -221,33 +232,47 @@ export async function measureUpload(
   let ema = 25;
   const t0 = performance.now();
 
-  // Cap at 4 MB so each POST completes in ~0.5–2 s on typical uplinks.
-  // Smaller chunks = more frequent completions = smoother byte crediting.
+  // Cap at 4 MB — keeps each POST in a 0.5–3 s window for most connections.
   const pickSize = () => clamp(Math.round(((ema * 1e6) / 8) * 1.0), 80_000, 4_000_000);
+
+  // Per-request speed samples derived from SERVER-TIMING (not client RTT).
+  const reqSamples: number[] = [];
 
   const worker = async () => {
     while (performance.now() - t0 < durationMs + 500) {
       if (signal.aborted) return;
       const size = pickSize();
       const body = buf.subarray(0, size);
-      const rt0 = performance.now();
+      const clientT0 = performance.now();
+      let res: Response;
       try {
-        const res = await fetch(`${CF}/__up`, {
+        res = await fetch(`${CF}/__up`, {
           method: "POST",
           body,
           cache: "no-store",
           headers: { "content-type": "application/octet-stream" },
           signal,
         });
-        await res.arrayBuffer();
+        await res.arrayBuffer(); // drain response body
       } catch (e) {
         if ((e as DOMException).name === "AbortError") return;
         await sleep(150);
         continue;
       }
-      const rdt = (performance.now() - rt0) / 1000;
+
+      const clientRdt = (performance.now() - clientT0) / 1000;
+
+      // Prefer the server-measured receive duration — it excludes the
+      // response RTT and TCP ACK latency, giving a true upload speed.
+      const serverMs = parseServerTimingMs(res.headers.get("server-timing"));
+      const rdt = serverMs != null ? serverMs / 1000 : clientRdt;
+
+      if (rdt > 0.02) {
+        const mbps = (size * 8) / rdt / 1e6;
+        reqSamples.push(mbps);
+        ema = ema * 0.5 + mbps * 0.5;
+      }
       total += size;
-      if (rdt > 0.05) ema = ema * 0.5 + ((size * 8) / rdt / 1e6) * 0.5;
     }
   };
 
@@ -273,24 +298,19 @@ export async function measureUpload(
 
   if (total < 20_000) throw new Error("Upload path unreachable — could not push test data.");
 
-  // Use actual bytes / actual elapsed time over the steady-state window
-  // (after ramp) rather than sample-based mean — immune to burst-crediting spikes.
-  const rampMs = durationMs * 0.15;
-  const steadyElapsedS = (durationMs - rampMs) / 1000;
-  // Bytes credited during the ramp period (estimated as 15% of total by time share)
-  const steadyBytes = total * (1 - rampMs / durationMs);
-  const directMbps = (steadyBytes * 8) / steadyElapsedS / 1e6;
-
-  // Cross-check with trimmed sample mean; if they diverge greatly,
-  // trust the lower (more conservative) value to avoid over-reporting.
-  const ramp = Math.max(0, Math.floor(samples.length * 0.15));
-  const core = samples.slice(ramp).filter((v) => v > 0);
-  const sampleMbps = trimmedMean(core, 0.1);
-  const mbps = sampleMbps > 0 ? Math.min(directMbps, sampleMbps * 1.15) : directMbps;
+  // Final result: trimmed mean of per-request server-timing speeds.
+  // These are the most accurate readings — each derived from the server's
+  // measured receive duration, not the client round-trip.
+  // Discard the first 15% of requests (ramp-up) and 10% outliers each end.
+  const ramp = Math.max(0, Math.floor(reqSamples.length * 0.15));
+  const core = reqSamples.slice(ramp);
+  const mbps = core.length > 0
+    ? trimmedMean(core, 0.10)
+    : trimmedMean(samples.slice(Math.floor(samples.length * 0.15)).filter(v => v > 0), 0.10);
 
   return {
     mbps,
-    peak: Math.max(...samples, 0),
+    peak: Math.max(...(reqSamples.length > 0 ? reqSamples : samples), 0),
     bytes: total,
     samples,
   };
