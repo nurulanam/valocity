@@ -2,8 +2,7 @@
 
 A precision broadband speed test that races global edge servers, picks the shortest path, and measures real download, upload, ping, and jitter.
 
-![Velocity Speed Test Screenshot](./screenshot.png)
-> *Note: Please replace `screenshot.png` with an actual screenshot of the app in action.*
+![Velocity Speed Test Screenshot](./public/screenshoot.png)
 
 ## Features
 
