@@ -379,8 +379,8 @@ export default function App() {
             </div>
 
             {/* stepper + run button */}
-            <div className="relative z-20 -mt-4 flex flex-col items-center gap-4">
-              <div className="flex items-center gap-1.5">
+            <div className="relative z-20 mt-8 lg:mt-6 flex flex-col items-center gap-4">
+              <div className="flex flex-wrap items-center justify-center gap-1.5 px-2">
                 {STEPS.map((s, i) => {
                   const st = stepState(s.id);
                   const c = ACCENT[s.id];
