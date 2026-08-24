@@ -84,6 +84,9 @@ export default function App() {
   const bootedRef = useRef(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  // EMA accumulator for upload display smoothing — prevents 0→spike bumping
+  // caused by bytes only being credited when a full POST completes.
+  const upEmaRef = useRef(0);
 
   const running = phase === "latency" || phase === "download" || phase === "upload";
   const accent = ACCENT[phase];
@@ -154,10 +157,20 @@ export default function App() {
       setPhase("upload");
       setLive(0);
       setProgress(0);
+      upEmaRef.current = 0;
       const u = await measureUpload(ac.signal, (mbps, _bytes, t) => {
-        setLive(mbps);
+        // Smooth the display value: blend non-zero readings into an EMA;
+        // when the engine reports 0 (in-flight request, no bytes yet credited)
+        // hold the previous EMA so the gauge doesn't drop to zero.
+        if (mbps > 0) {
+          upEmaRef.current = upEmaRef.current === 0
+            ? mbps
+            : upEmaRef.current * 0.75 + mbps * 0.25;
+        }
+        const display = upEmaRef.current > 0 ? upEmaRef.current : mbps;
+        setLive(display);
         setProgress(Math.min(1, t / 9000));
-        chartRef.current.push({ t: performance.now(), v: mbps, phase: "upload" });
+        chartRef.current.push({ t: performance.now(), v: display, phase: "upload" });
       });
       setUpR(u);
 
