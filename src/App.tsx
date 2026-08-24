@@ -514,12 +514,17 @@ export default function App() {
           }}
         />
 
-        <footer className="mt-10 flex flex-col gap-2 border-t border-white/[0.06] pt-5 md:flex-row md:items-center md:justify-between">
-          <p className="font-jbmono text-[9px] leading-relaxed tracking-[0.12em] text-white/25">
-            METHODOLOGY — 5 EDGE NETWORKS RACED BY REAL ROUND-TRIP PROBES · SHORTEST PATH AUTO-SELECTED ·
-            THROUGHPUT STREAMED VIA YOUR NEAREST ANYCAST EDGE PoP · TRIMMED-MEAN AGGREGATION
-          </p>
-          <p className="font-jbmono text-[9px] tracking-[0.2em] text-white/25">PRESS SPACE TO RUN</p>
+        <footer className="mt-10 flex flex-col gap-2 border-t border-white/[0.06] pt-5 md:flex-row md:items-start md:justify-between">
+          <div className="flex flex-col gap-2 max-w-3xl">
+            <p className="font-jbmono text-[9px] leading-relaxed tracking-[0.12em] text-white/25">
+              METHODOLOGY — 5 EDGE NETWORKS RACED BY REAL ROUND-TRIP PROBES · SHORTEST PATH AUTO-SELECTED ·
+              THROUGHPUT STREAMED VIA YOUR NEAREST ANYCAST EDGE PoP · TRIMMED-MEAN AGGREGATION
+            </p>
+            <p className="font-jbmono text-[9px] tracking-[0.12em] text-white/25">
+              DEVELOPED BY <a href="https://github.com/nurulanam" target="_blank" rel="noreferrer" className="text-white/40 hover:text-white/60 transition-colors">@NURULANAM</a>
+            </p>
+          </div>
+          <p className="font-jbmono text-[9px] tracking-[0.2em] text-white/25 mt-1 md:mt-0">PRESS SPACE TO RUN</p>
         </footer>
       </div>
     </div>
